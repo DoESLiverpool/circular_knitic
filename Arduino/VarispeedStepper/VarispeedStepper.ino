@@ -8,66 +8,97 @@
 // Big easy driver
 // Speed potentiometer
 // [optional] Acceleration potentiometer
+#include "Arduino.h"
+#include "DigitalIO.h"
 
 // Pin assignations
 // Pin wired to the step pin on the Big Easy Driver
-const int kStepPin = 3;
-const int kDirectionPin = 2;
+const int kStepPin = 4;
+// Pin wired to the direction pin on the Big Easy Driver
+const int kDirectionPin = 3;
+// Pin wired to mid-point of a pot wired between 5V and GND, to
+// measure the fine-tuning setting
 const int kSpeedPotPin = A0;
-const int kAccelerationPotPin = A1;
-const int kActivatePin = 12;
+// Pin which, when pulled to ground, switches the rotation on
+const int kActivatePin = 2;
 
-// Design notes
-// The "Baseline" values are the centre-marker for the speed or
-// acceleration.  The potentiometers can vary either of those by
-// 
+// How many microseconds we should keep the step pin high
+const int kStepPulseLength = 50;
 
 // Steps per revolution
 const long kStepsPerRevolution = 200 * 8; // 8-step microstepping
 // Baseline speed, in rpm
-const long kBaselineRpm = 80;
+const long kBaselineRpm = 12;
 const float kBaselineStepsPerSecond = kStepsPerRevolution * kBaselineRpm / 60;
 const long kMicrosecondsInOneSecond = 1000L * 1000;
 // Step intervals are all in microseconds
 const long kBaselineStepInterval = kMicrosecondsInOneSecond / kBaselineStepsPerSecond;
-const long kInitialStepInterval = kMicrosecondsInOneSecond / 2;
-const long kBaselineAcceleration = 1500;
+const long kStoppedStepInterval = 0xffff/2;
 const float kVariableRangeRpm = 1;
 const long kVariableStepsPerSecond = kStepsPerRevolution * kVariableRangeRpm / 60;
-const long kVariableStepRange = kMicrosecondsInOneSecond / kVariableStepsPerSecond;
-const long kLowerStepLimit = 0; //kBaselineStepInterval - (kVariableStepRange/2);
-const long kVariableAccelerationRange = 1000;
-const long kLowerAccelerationLimit = kBaselineAcceleration - (kVariableAccelerationRange/2);
-// How many microseconds we should keep the step pin high
-const long kStepDelay = 50;
+//const long kVariableStepRange = kMicrosecondsInOneSecond / kVariableStepsPerSecond;
+const long kVariableStepRange = 1000;
+const long kDesiredLowerStepIntervalLimit = kBaselineStepInterval - (kVariableStepRange/2);
+const long kMinimumStepIntervalLimit = 40;
+const long kLowerStepIntervalLimit = kMinimumStepIntervalLimit < kDesiredLowerStepIntervalLimit ? kDesiredLowerStepIntervalLimit : kMinimumStepIntervalLimit;
 
-// The desired step interval to use when running, as set
-// by the speed potentiometer
+// How many microseconds we should shorten the interval time by
+// when accelerating up to speed.  Calculated through experimentation
+const long kAcceleration = 100;
+// How many microseconds we should lengthen the interval time by
+// when slowing to a stop.  Calculated through experimentation
+const long kDeceleration = 50;
+
 long gConfiguredStepInterval = kBaselineStepInterval;
-// The desired acceleration speed, as set by the acceleration
-// potentiometer
-long gConfiguredAcceleration = kBaselineAcceleration;
+unsigned long gStartIntervalTime = millis();
+long gStartIntervalStepCount = 0;
+volatile long gTargetStepInterval = kStoppedStepInterval;
+volatile long gCurrentStepInterval = kStoppedStepInterval;
+volatile long gStepCount = 0;
 
-// Speed variables
-// The speed we want to be running at
-long gTargetStepInterval = kInitialStepInterval;
-// The speed we're currently running at
-long gCurrentStepInterval = kInitialStepInterval;
 
-// Keep some stats on our performance
-int gStepCount = 0;
-unsigned long gActiveStart = 0L;
-unsigned long gActiveStop = 0L;
+ISR(TIMER1_COMPA_vect)
+{
+static boolean state = false;
+  if (state)
+  {
+    // It's on, turn it off and wait for specified time
+    fastDigitalWrite(kStepPin, LOW);
+    TCCR1B = 0;                         // stop timer
+    TCNT1 = 0;                          // count back to zero
+    TCCR1B = bit(WGM12) | bit(CS11);    // CTC, scale to clock / 8
+    // time before timer fires (zero relative)
+    // multiply by two because we are on a prescaler of 8
+    OCR1A = (gCurrentStepInterval * 2) - (1 * 2) - 1;     
+  }
+  else
+  {
+    // Start a step...
+    fastDigitalWrite(kStepPin, HIGH);
+    gStepCount++;
+    // ...and ask to be called again quickly to turn it off
+    TCCR1B = 0;                         // stop timer
+    TCNT1 = 0;                          // count back to zero
+    TCCR1B = bit(WGM12) | bit(CS11);    // CTC, scale to clock / 8
+    // time before timer fires (zero relative)
+    // multiply by two because we are on a prescaler of 8
+    OCR1A = (kStepPulseLength * 2) - (1 * 2) - 1;     
+  }
+  state = !state;  // toggle
+}
 
+
+// the setup function runs once when you press reset or power the board
 void setup() {
   Serial.begin(9600);
   Serial.println("VarispeedStepper");
+
   Serial.println("================");
   Serial.println("Configuration:");
   Serial.print("kBaselineStepInterval = ");
   Serial.println(kBaselineStepInterval);
-  Serial.print("kInitialStepInterval = ");
-  Serial.println(kInitialStepInterval);
+  Serial.print("kStoppedStepInterval = ");
+  Serial.println(kStoppedStepInterval);
   Serial.print("kMicrosecondsInOneSecond = ");
   Serial.println(kMicrosecondsInOneSecond);
   Serial.print("kBaselineStepsPerSecond = ");
@@ -75,26 +106,31 @@ void setup() {
   Serial.print("kVariableStepRange = ");
   Serial.println(kVariableStepRange);
   Serial.print("kLowerStepLimit = ");
-  Serial.println(kLowerStepLimit);
+  Serial.println(kLowerStepIntervalLimit);
   Serial.println();
 
   // Configure IO pins
   pinMode(kStepPin, OUTPUT);
   pinMode(kDirectionPin, OUTPUT);
   pinMode(kSpeedPotPin, INPUT);
-  pinMode(kAccelerationPotPin, INPUT);
-  pinMode(kActivatePin, INPUT);
+  pinMode(kActivatePin, INPUT_PULLUP);
 
   Serial.println("Let's go!");
+  // set up Timer 1
+  TCCR1A = 0;          // normal operation
+  TCCR1B = bit(WGM12) | bit(CS10);   // CTC, no pre-scaling
+  OCR1A =  999;       // compare A register value (1000 * clock speed)
+  TIMSK1 = bit (OCIE1A);             // interrupt on Compare A Match
 }
 
+// the loop function runs over and over again forever
 void loop() {
   // Adjust our settings
-  gConfiguredStepInterval = kLowerStepLimit + map(analogRead(kSpeedPotPin), 0, 1023, 0, kVariableStepRange);
-  gConfiguredAcceleration = kLowerAccelerationLimit + map(analogRead(kAccelerationPotPin), 0, 1023, 0, kVariableAccelerationRange);
+  gConfiguredStepInterval = kLowerStepIntervalLimit + map(analogRead(kSpeedPotPin), 0, 1023, 0, kVariableStepRange);
+  //gConfiguredStepInterval = map(analogRead(kSpeedPotPin), 0, 1023, 40, 800);
 
   // Check for activation
-  if (digitalRead(kActivatePin) == HIGH)
+  if (digitalRead(kActivatePin) == LOW)
   {
     // We're aiming for running
     gTargetStepInterval = gConfiguredStepInterval;
@@ -102,68 +138,59 @@ void loop() {
   else
   {
     // We're trying to stop
-    gTargetStepInterval = kInitialStepInterval;
-    if (gActiveStop == 0)
-    {
-      gActiveStop = micros();
-    }
+    gTargetStepInterval = kStoppedStepInterval;
   }
 
-  if (gTargetStepInterval == kInitialStepInterval)
+/*
+  if (millis() % 5000 < 50)
   {
-    // We're stopped
-    if ((millis() % 1000) == 0)
-    {
-      // Output some stats every second while we're stopped
-      Serial.print("Speed: ");
-      Serial.println(gConfiguredStepInterval);
-      Serial.print("Accel: ");
-      Serial.println(gConfiguredAcceleration);
-      if (gActiveStart)
-      {
-        // Work out what speed we achieved
-        Serial.println();
-        Serial.print("Running time: ");
-        Serial.print((gActiveStop-gActiveStart)/(1000.0*1000));
-        Serial.println(" seconds");
-        Serial.print("Steps: ");
-        Serial.println(gStepCount);
-        Serial.print("Actual speed: ");
-        Serial.print((1.0*gStepCount/kStepsPerRevolution)/((gActiveStop-gActiveStart)/(1000.0*1000*60)));
-        Serial.println(" rpm");
-        gStepCount = 0;        
-        gActiveStart = 0;
-        gActiveStop = 0;
-      }
-    }
+    Serial.print("gConfiguredStepInterval = ");
+    Serial.println(gConfiguredStepInterval);
+    Serial.print("gCurrentStepInterval = ");
+    Serial.println(gCurrentStepInterval);
+    Serial.print("gCurrentStepInterval (16-bit) = ");
+    Serial.println((int16_t)gCurrentStepInterval);
+    Serial.print("gTargetStepInterval = ");
+    Serial.println(gTargetStepInterval);
   }
-  else
+*/
+  if (millis() % (300*1000UL) < 80)
   {
-    // We're running!
-    if (gCurrentStepInterval < gTargetStepInterval)
-    {
-      gCurrentStepInterval += gConfiguredAcceleration;
-    }
-    else if (gCurrentStepInterval > gTargetStepInterval)
-    {
-      gCurrentStepInterval -= gConfiguredAcceleration;
-    }
-    else
-    {
-      // We're reached our target
-      if (gActiveStart == 0)
-      {
-        // We've just come up to speed on starting
-        gActiveStart = micros();
-      }
-    }
-    gCurrentStepInterval = constrain(gCurrentStepInterval, kLowerStepLimit, kInitialStepInterval);
-    int wait = micros() % gCurrentStepInterval;
-    delayMicroseconds(wait);
-    digitalWrite(kStepPin, HIGH);
-    delayMicroseconds(kStepDelay);
-    digitalWrite(kStepPin, LOW);
-    gStepCount++;
+    unsigned long endIntervalTime = millis();
+    long stepCount = gStepCount - gStartIntervalStepCount;
+    float revolutions = stepCount * 1.0 / kStepsPerRevolution;
+    float minutesElapsed = (endIntervalTime - gStartIntervalTime) / (1000.0 * 60);
+    Serial.print("### Steps: ");
+    Serial.print(stepCount);
+    Serial.print(" Revolutions: ");
+    Serial.print(revolutions);
+    Serial.print(" Time: ");
+    Serial.print(endIntervalTime - gStartIntervalTime);
+    Serial.print(" Minutes elapsed: ");
+    Serial.print(minutesElapsed);
+    Serial.print(" Speed: ");
+    Serial.println(revolutions / minutesElapsed);
+    gStartIntervalTime = millis();
+    gStartIntervalStepCount = gStepCount;
   }
+
+  // We're running!
+  if (gCurrentStepInterval > gTargetStepInterval)
+  {
+    long newInterval = gCurrentStepInterval -= kAcceleration;
+    newInterval = constrain(newInterval, gTargetStepInterval, kStoppedStepInterval);
+    noInterrupts();
+    gCurrentStepInterval = newInterval;
+    interrupts();
+  }
+  else if (gCurrentStepInterval < gTargetStepInterval)
+  {
+    long newInterval = gCurrentStepInterval + kDeceleration;
+    newInterval = constrain(newInterval, kLowerStepIntervalLimit, gTargetStepInterval);
+    noInterrupts();
+    gCurrentStepInterval = newInterval;
+    interrupts();
+  }
+  delay(3);
 }
 
