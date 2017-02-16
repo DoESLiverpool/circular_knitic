@@ -7,7 +7,6 @@
 // Hardware:
 // Big easy driver
 // Speed potentiometer
-// [optional] Acceleration potentiometer
 #include "Arduino.h"
 #include "DigitalIO.h"
 
@@ -21,33 +20,38 @@ const int kDirectionPin = 3;
 const int kSpeedPotPin = A0;
 // Pin which, when pulled to ground, switches the rotation on
 const int kActivatePin = 2;
+// Pin wired to the enable pin on the Big Easy Driver
+const int kEnablePin = 9;
+// The enable pin is active low
+const int kEnabled = LOW;
+const int kDisabled = HIGH;
 
 // How many microseconds we should keep the step pin high
 const int kStepPulseLength = 50;
 
 // Steps per revolution
-const long kStepsPerRevolution = 200 * 8; // 8-step microstepping
+const long kStepsPerRevolution = 400 * 8; // 8-step microstepping
 // Baseline speed, in rpm
 const long kBaselineRpm = 12;
 const float kBaselineStepsPerSecond = kStepsPerRevolution * kBaselineRpm / 60;
 const long kMicrosecondsInOneSecond = 1000L * 1000;
 // Step intervals are all in microseconds
 const long kBaselineStepInterval = kMicrosecondsInOneSecond / kBaselineStepsPerSecond;
-const long kStoppedStepInterval = 0xffff/2;
+const long kStoppedStepInterval = 0x22ff/2;
 const float kVariableRangeRpm = 1;
 const long kVariableStepsPerSecond = kStepsPerRevolution * kVariableRangeRpm / 60;
 //const long kVariableStepRange = kMicrosecondsInOneSecond / kVariableStepsPerSecond;
-const long kVariableStepRange = 1000;
+const long kVariableStepRange = 800;
 const long kDesiredLowerStepIntervalLimit = kBaselineStepInterval - (kVariableStepRange/2);
 const long kMinimumStepIntervalLimit = 40;
 const long kLowerStepIntervalLimit = kMinimumStepIntervalLimit < kDesiredLowerStepIntervalLimit ? kDesiredLowerStepIntervalLimit : kMinimumStepIntervalLimit;
 
 // How many microseconds we should shorten the interval time by
 // when accelerating up to speed.  Calculated through experimentation
-const long kAcceleration = 100;
+const long kAcceleration = 200;
 // How many microseconds we should lengthen the interval time by
 // when slowing to a stop.  Calculated through experimentation
-const long kDeceleration = 50;
+const long kDeceleration = 5;
 
 long gConfiguredStepInterval = kBaselineStepInterval;
 unsigned long gStartIntervalTime = millis();
@@ -114,6 +118,8 @@ void setup() {
   pinMode(kDirectionPin, OUTPUT);
   pinMode(kSpeedPotPin, INPUT);
   pinMode(kActivatePin, INPUT_PULLUP);
+  pinMode(kEnablePin, OUTPUT);
+  digitalWrite(kEnablePin, kDisabled);
 
   Serial.println("Let's go!");
   // set up Timer 1
@@ -177,6 +183,7 @@ void loop() {
   // We're running!
   if (gCurrentStepInterval > gTargetStepInterval)
   {
+    digitalWrite(kEnablePin, kEnabled);
     long newInterval = gCurrentStepInterval -= kAcceleration;
     newInterval = constrain(newInterval, gTargetStepInterval, kStoppedStepInterval);
     noInterrupts();
@@ -185,11 +192,16 @@ void loop() {
   }
   else if (gCurrentStepInterval < gTargetStepInterval)
   {
+    digitalWrite(kEnablePin, kEnabled);
     long newInterval = gCurrentStepInterval + kDeceleration;
     newInterval = constrain(newInterval, kLowerStepIntervalLimit, gTargetStepInterval);
     noInterrupts();
     gCurrentStepInterval = newInterval;
     interrupts();
+  }
+  else if (gCurrentStepInterval == kStoppedStepInterval)
+  {
+    digitalWrite(kEnablePin, kDisabled);
   }
   delay(3);
 }
