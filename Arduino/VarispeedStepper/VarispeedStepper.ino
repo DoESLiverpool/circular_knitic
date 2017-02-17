@@ -32,7 +32,7 @@ const int kStepPulseLength = 50;
 // Steps per revolution
 const long kStepsPerRevolution = 400 * 8; // 8-step microstepping
 // Baseline speed, in rpm
-const long kBaselineRpm = 12;
+const long kBaselineRpm = 30;
 const float kBaselineStepsPerSecond = kStepsPerRevolution * kBaselineRpm / 60;
 const long kMicrosecondsInOneSecond = 1000L * 1000;
 // Step intervals are all in microseconds
@@ -41,7 +41,7 @@ const long kStoppedStepInterval = 0x22ff/2;
 const float kVariableRangeRpm = 1;
 const long kVariableStepsPerSecond = kStepsPerRevolution * kVariableRangeRpm / 60;
 //const long kVariableStepRange = kMicrosecondsInOneSecond / kVariableStepsPerSecond;
-const long kVariableStepRange = 800;
+const long kVariableStepRange = 1200;
 const long kDesiredLowerStepIntervalLimit = kBaselineStepInterval - (kVariableStepRange/2);
 const long kMinimumStepIntervalLimit = 40;
 const long kLowerStepIntervalLimit = kMinimumStepIntervalLimit < kDesiredLowerStepIntervalLimit ? kDesiredLowerStepIntervalLimit : kMinimumStepIntervalLimit;
