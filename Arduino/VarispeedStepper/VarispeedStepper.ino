@@ -9,6 +9,7 @@
 // Speed potentiometer
 #include "Arduino.h"
 #include "DigitalIO.h"
+#include <LiquidCrystal.h>
 
 // Pin assignations
 // Pin wired to the step pin on the Big Easy Driver
@@ -25,6 +26,11 @@ const int kEnablePin = 9;
 // The enable pin is active low
 const int kEnabled = LOW;
 const int kDisabled = HIGH;
+
+// initialize the library with the numbers of the interface pins
+LiquidCrystal lcd(12, 11, 5, 6, 7, 8);
+
+
 
 // How many microseconds we should keep the step pin high
 const int kStepPulseLength = 50;
@@ -94,6 +100,12 @@ static boolean state = false;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
+
+    // set up the LCD's number of columns and rows:
+  lcd.begin(16, 2);
+  // Print a message to the LCD.
+  lcd.print("Let's make hats!");
+  
   Serial.begin(9600);
   Serial.println("VarispeedStepper");
 
