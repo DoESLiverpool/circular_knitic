@@ -57,7 +57,7 @@ const long kLowerStepIntervalLimit = kMinimumStepIntervalLimit < kDesiredLowerSt
 const long kAcceleration = 200;
 // How many microseconds we should lengthen the interval time by
 // when slowing to a stop.  Calculated through experimentation
-const long kDeceleration = 5;
+const long kDeceleration = 50;
 
 long gConfiguredStepInterval = kBaselineStepInterval;
 unsigned long gStartIntervalTime = millis();
