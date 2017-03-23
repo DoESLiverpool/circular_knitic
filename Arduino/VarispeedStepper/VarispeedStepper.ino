@@ -21,10 +21,10 @@ const int kSpeedPotPin = A0;
 // Pin which, when pulled to ground, switches the rotation on
 const int kActivatePin = 2;
 // Pin wired to the enable pin on the Big Easy Driver
-const int kEnablePin = 9;
-// The enable pin is active low
-const int kEnabled = LOW;
-const int kDisabled = HIGH;
+const int kEnablePin = 8;
+// The enable pin is active high
+const int kEnabled = HIGH;
+const int kDisabled = LOW;
 
 // How many microseconds we should keep the step pin high
 const int kStepPulseLength = 50;
@@ -37,7 +37,7 @@ const float kBaselineStepsPerSecond = kStepsPerRevolution * kBaselineRpm / 60;
 const long kMicrosecondsInOneSecond = 1000L * 1000;
 // Step intervals are all in microseconds
 const long kBaselineStepInterval = kMicrosecondsInOneSecond / kBaselineStepsPerSecond;
-const long kStoppedStepInterval = 0x22ff/2;
+const long kStoppedStepInterval = 0x42ff/2;
 const float kVariableRangeRpm = 1;
 const long kVariableStepsPerSecond = kStepsPerRevolution * kVariableRangeRpm / 60;
 //const long kVariableStepRange = kMicrosecondsInOneSecond / kVariableStepsPerSecond;
@@ -116,6 +116,7 @@ void setup() {
   // Configure IO pins
   pinMode(kStepPin, OUTPUT);
   pinMode(kDirectionPin, OUTPUT);
+  digitalWrite(kDirectionPin, HIGH);
   pinMode(kSpeedPotPin, INPUT);
   pinMode(kActivatePin, INPUT_PULLUP);
   pinMode(kEnablePin, OUTPUT);
