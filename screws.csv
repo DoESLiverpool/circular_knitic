@@ -1,0 +1,16 @@
+Description,Size,Type ,Long,Quantity
+attach inners (x4) with outers (x4),M2,Philips head screw ,8mm,12
+attach middle brace to outers (12 x 2) or (12 x 4),M2 ,Philips head screw ,12mm,24 (or 48)
+,M2,steel nut ,,36 (or 60)
+bottom bearings (z-shaped),M3,Philips head screw ,12mm,18
+top bearings,M3,Philips head screw ,12mm,10
+attach inside base,M3,Philips head screw ,12mm,16
+attach outside base,M3,Philips head screw ,12mm,16
+spacers,M3,Philips head screw ,16mm,22
+attach mountain and makerbeam,M3,Philips head screw ,12mm,6
+,M3,steel nylon lock nut,,42
+bottom bearings,M5,Philips head ,25mm,5
+top bearings,M5,hex screw ,12mm,4
+mount electronic box,M6,hex screw,70mm,4
+mount electronic box,M6,steel nut,,4
+mount electronic box,M6,steel wing nut,,4
